@@ -2,13 +2,13 @@ import torch
 import torch.nn as nn
 from torch.nn import BatchNorm2d
 
-def conv(in_c,out_c,kernel=3,norm=BatchNorm2d):
+def conv(in_c,out_c,kernel=3,norm=BatchNorm2d,activation=nn.ELU):
 	layers = [ nn.Conv2d(in_c,out_c,kernel_size=kernel,bias=False),
-			   nn.ELU(),
+			   activation(),
 			   norm(),
 			   nn.Conv2d(out_c,out_c,kernel_size=kernel,bias=False),
 			   norm(),
-			   nn.ELU()
+			   activation(),
 			   ]
 	return nn.Sequential(*layers)
 
@@ -30,10 +30,15 @@ class generator(nn.Module):
 		return self.gen(x)
 
 
-class dicriminator(nn.Module):
+class discriminator(nn.Module):
 	def __init__(self,config):
+		super(discriminator,self).__init__()
+		channels = config.discriminator_channels
+		layers = [conv(in_c=channel[i-1],out_c=channel[i]) for i in range(1,len(channels))]
+		self.disc = nn.Sequential(*layers)
 
 	def forward(self,x):
+		return self.disc(x)
 
 
 class encoder(nn.Module):
@@ -41,7 +46,7 @@ class encoder(nn.Module):
 	def __init__(self,config):
 		super(encoder,self).__init__()
 		channels = config.encoder_channels
-		layers = [conv(in_c=channels[i-1],out_c=channels[i]) for i in range(len(channels))]
+		layers = [conv(in_c=channels[i-1],out_c=channels[i]) for i in range(1,len(channels))]
 		self.enc = nn.Sequential(*layers)
 
 	def forward(self,x):
