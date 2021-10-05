@@ -1,6 +1,19 @@
 #huge shout out to https://github.com/ClementPinard/SfmLearner-Pytorch for a lot of this code!!
 
 import torch.nn.functional as F
+import torch
+
+pixel_coords = None
+
+
+def set_id_grid(depth):
+    global pixel_coords
+    b, h, w = depth.size()
+    i_range = torch.arange(0, h).view(1, h, 1).expand(1, h, w).type_as(depth)  # [1, H, W]
+    j_range = torch.arange(0, w).view(1, 1, w).expand(1, h, w).type_as(depth)  # [1, H, W]
+    ones = torch.ones(1, h, w).type_as(depth)
+
+    pixel_coords = torch.stack((j_range, i_range, ones), dim=1)  # [1, 3, H, W]
 
 def euler2mat(angle):
     B = angle.size(0)
@@ -9,7 +22,7 @@ def euler2mat(angle):
     cosz = torch.cos(z)
     sinz = torch.sin(z)
 
-    zeros = z.detach()*0
+    zeros = z.detach()
     ones = zeros.detach()+1
     zmat = torch.stack([cosz, -sinz, zeros,
                         sinz,  cosz, zeros,

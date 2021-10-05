@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch
 
 class GANLoss(nn.Module):
     def __init__(self, gan_mode='lsgan', target_real_label=1.0, target_fake_label=0.0):

@@ -23,7 +23,7 @@ class generator(nn.Module):
 	def __init__(self,config):
 		super(generator,self).__init__()
 		channels = config.genrator_channels
-		layers = [upconv(in_c=channel[i-1],out_c=channel[i]) for i in range(1,len(channels))]
+		layers = [upconv(in_c=channels[i-1],out_c=channels[i]) for i in range(1,len(channels))]
 		self.gen = nn.Sequential(*layers)
 
 	def forward(self,x):
@@ -34,7 +34,7 @@ class discriminator(nn.Module):
 	def __init__(self,config):
 		super(discriminator,self).__init__()
 		channels = config.discriminator_channels
-		layers = [conv(in_c=channel[i-1],out_c=channel[i]) for i in range(1,len(channels))]
+		layers = [conv(in_c=channels[i-1],out_c=channels[i]) for i in range(1,len(channels))]
 		self.disc = nn.Sequential(*layers)
 
 	def forward(self,x):
@@ -66,7 +66,7 @@ class recurrent_net(nn.Module):
 		with torch.no_grad():
 			rand = torch.rand(1,config.in_c,config.h,config.w)
 			enc = encoder(config)
-			out = enc(out)
+			out = enc(rand)
 			out = out.shape
 			return out[1]*out[2]*out[3]
 
@@ -76,3 +76,21 @@ class recurrent_net(nn.Module):
 		out, (hn,cn) = self.recur(x)
 		return hn
 
+
+class ganvo(nn.Module):
+	def __init__(self,config):
+		super(ganvo,self).__init__()
+		self.encoder = encoder(config)
+		self.cnn = encoder(config)
+		self.generator = generator(config)
+		self.rnn = recurrent_net(config)
+
+	def forward(self,img1,img2,img3):
+
+		out_gan = self.encoder(img2)
+		depth = self.generator(out_gan)
+
+		pose = 	self.cnn(torch.cat([img1,img2,img3],dim=1))
+		pose = self.rnn(pose)
+
+		return depth, pose
