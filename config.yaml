@@ -2,10 +2,12 @@ intrinsics: [[1,0,0],[0,1,0],[0,0,1]]
 num_layers_lstm: 2
 encoder_channels: [3, 32, 64, 128, 256, 512]
 cnn_channels: [9, 32, 64, 128, 256, 512]
-generator_channels: [512, 256, 128, 64, 1]
+generator_channels: [512,512, 256, 128, 64, 1]
 discriminator_channels: [3,6,128,256,512,1024]
 in_c: 3
 h: 128
 w: 416
-lstm_hidden_size: 10
-
+lstm_hidden_size: 8
+batch_size: 4
+epochs: 5
+basepath: './data'

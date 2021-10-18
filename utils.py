@@ -76,8 +76,7 @@ def pose_vec2mat(vec, rotation_mode='euler'):
 
 
 def cam2pixel(cam_coords, proj_c2p_rot, proj_c2p_tr):
-    print(cam_coords.shape)
-    b, _,_, h, w = cam_coords.size()
+    b, _, h, w = cam_coords.size()
     cam_coords_flat = cam_coords.reshape(b, 3, -1)  # [B, 3, H*W]
     if proj_c2p_rot is not None:
         pcoords = proj_c2p_rot @ cam_coords_flat
@@ -86,16 +85,12 @@ def cam2pixel(cam_coords, proj_c2p_rot, proj_c2p_tr):
 
     if proj_c2p_tr is not None:
         pcoords = pcoords + proj_c2p_tr  # [B, 3, H*W]
-
-    print("kk",proj_c2p_tr.shape)
     X = pcoords[:, 0]
     Y = pcoords[:, 1]
     Z = pcoords[:, 2].clamp(min=1e-3)
 
     X_norm = 2*(X / Z)/(w-1) - 1  # Normalized, -1 if on extreme left, 1 if on extreme right (x = w-1) [B, H*W]
     Y_norm = 2*(Y / Z)/(h-1) - 1  # Idem [B, H*W]
-
-    print("norm",Y_norm.shape)
 
     pixel_coords = torch.stack([X_norm, Y_norm], dim=2)  # [B, H*W, 2]
     return pixel_coords.reshape(b, h, w, 2)
@@ -108,7 +103,7 @@ def pixel2cam(depth, intrinsics_inv):
         set_id_grid(depth)
     current_pixel_coords = pixel_coords[..., :h, :w].expand(b, 3, h, w).reshape(b, 3, -1)  # [B, 3, H*W]
     cam_coords = (intrinsics_inv @ current_pixel_coords).reshape(b, 3, h, w)
-    return cam_coords * depth.unsqueeze(1)
+    return cam_coords * depth
 
 
 
@@ -117,9 +112,7 @@ def inverse_warp(img, depth, pose, intrinsics, rotation_mode='euler', padding_mo
     batch_size, _, img_height, img_width = img.size()
 
     cam_coords = pixel2cam(depth, intrinsics.inverse())  # [B,3,H,W]
-
     pose_mat = pose_vec2mat(pose, rotation_mode)  # [B,3,4]
-    print("ppp",pose.shape)
 
     # Get projection matrix for tgt camera frame to source pixel frame
     proj_cam_to_src_pixel = intrinsics @ pose_mat  # [B, 3, 4]

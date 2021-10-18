@@ -6,21 +6,22 @@ import itertools
 
 from utils import inverse_warp, pose_vec2mat
 
-def conv(in_c,out_c,kernel=3,norm=BatchNorm2d,activation=nn.ELU):
-	layers = [ nn.Conv2d(in_c,out_c,kernel_size=kernel,bias=False),
+def conv(in_c,out_c,kernel=3,norm=BatchNorm2d,activation=nn.ELU, stride=1, padding=0):
+	layers = [ nn.Conv2d(in_c,out_c,kernel_size=kernel,stride=stride,bias=False,padding=padding),
 			   activation(),
 			   norm(out_c),
-			   nn.Conv2d(out_c,out_c,kernel_size=kernel,bias=False),
+			   nn.Conv2d(out_c,out_c,kernel_size=kernel,bias=False, padding=1),
 			   norm(out_c),
 			   activation(),
 			   ]
 	return nn.Sequential(*layers)
 
-def upconv(in_c,out_c,kernel_size=4,norm=BatchNorm2d):
+def upconv(in_c,out_c,kernel_size=3,norm=BatchNorm2d):
 
-	layers = [ nn.ConvTranspose2d(in_c,out_c,kernel_size=kernel_size,bias=False),
+	layers = [nn.Upsample(scale_factor=2, mode = 'bilinear'),
+                   nn.Conv2d(in_c,out_c,kernel_size=kernel_size,bias=False,padding=1),
 	           norm(out_c),
-			   nn.ELU()]
+		   nn.ELU()]
 	return nn.Sequential(*layers)
 
 class generator(nn.Module):
@@ -53,7 +54,7 @@ class encoder(nn.Module):
 			channels = config.cnn_channels
 		else:
 			channels = config.encoder_channels
-		layers = [conv(in_c=channels[i-1],out_c=channels[i]) for i in range(1,len(channels))]
+		layers = [conv(in_c=channels[i-1],out_c=channels[i],stride=2,padding=1) for i in range(1,len(channels))]
 		self.enc = nn.Sequential(*layers)
 
 	def forward(self,x):
@@ -66,7 +67,6 @@ class recurrent_net(nn.Module):
 		super(recurrent_net,self).__init__()
 		self.config = config
 		lstm_in_size = self.get_in_size(config)
-		print(lstm_in_size)
 		self.recur = nn.LSTM(input_size=lstm_in_size,hidden_size=config.lstm_hidden_size,
 			num_layers=config.num_layers_lstm,proj_size=6)
 
@@ -76,55 +76,51 @@ class recurrent_net(nn.Module):
 			enc = encoder(config,cnn=True)
 			out = enc(rand)
 			out = out.shape
-			print(out)
-			return out[1]*out[2]*out[3]//3
+			return out[2]*out[3]
 
 	def forward(self,x):
 		h0 = torch.randn(self.config.num_layers_lstm,x.shape[0],6)
 		c0 = torch.randn(self.config.num_layers_lstm,x.shape[0],self.config.lstm_hidden_size)
-		print(x.shape)
-		x_in = x.reshape(3,x.shape[0],(x.shape[1]*x.shape[2]*x.shape[3])//3)
-		print("ok",x_in.shape)
+		x_in = x.reshape(x.shape[1],x.shape[0],-1)
 		out, (hn,cn) = self.recur(x_in)
 		return hn
 
 
 class ganvo(nn.Module):
 	def __init__(self,config):
-		super(ganvo,self).__init__()
-		self.config = config
-		self.encoder = encoder(config)
-		self.cnn = encoder(config,cnn=True)
-		self.generator = generator(config)
-		self.rnn = recurrent_net(config)
-		self.discriminator = discriminator(config)
-		self.optimizer = torch.optim.Adam(
+                super(ganvo,self).__init__()
+                self.config = config
+                self.encoder = encoder(config)
+                self.cnn = encoder(config,cnn=True)
+                self.generator = generator(config)
+                self.rnn = recurrent_net(config)
+                self.discriminator = discriminator(config)
+                self.optimizer = torch.optim.Adam(
 		itertools.chain(self.generator.parameters(),self.encoder.parameters(),self.cnn.parameters(),self.discriminator.parameters()
 		),lr=0.001)
-		self.mseloss = torch.nn.MSELoss()
-		self.ganloss = GANLoss(gan_mode='vanilla')
+                self.mseloss = torch.nn.MSELoss()
+                self.ganloss = GANLoss(gan_mode='vanilla')
+                self.device = "cuda:0" if torch.cuda.is_available() else "cpu:0"
 
-	def set_input(self, source, imgt_1, imgt_2):
-		self.source = source
-		self.imgt_1 = imgt_1
-		self.imgt_2 = imgt_2
+	def set_input(self, datum):
+                device = self.device
+                self.source = datum["t1"].to(device)
+                self.imgt_1 = datum["t0"].to(device)
+                self.imgt_2 = datum["t2"].to(device)
 
 	def forward(self):
-
-		out_gan = self.encoder(self.source)
-		depth = self.generator(out_gan)
-
-		pose = 	self.cnn(torch.cat([self.imgt_1,self.source,self.imgt_2],dim=1))
-		pose = self.rnn(pose)
-
-		self.depth = depth
-		self.pose = pose
-
-		return depth, pose
+                out_gan = self.encoder(self.source)
+                depth = self.generator(out_gan)
+                pose = self.cnn(torch.cat([self.imgt_1,self.source,self.imgt_2],dim=1))
+                pose = self.rnn(pose)
+                self.depth = depth
+                self.pose = pose
+                
+                return depth, pose
 
 	def loss_generator(self):
-		const_from_t_1, _ = inverse_warp(self.imgt_1,self.depth,self.pose[0,:],torch.tensor(self.config.intrinsics).float())
-		const_from_t_2, _ = inverse_warp(self.imgt_2,self.depth,self.pose[1,:],torch.tensor(self.config.intrinsics).float())
+		const_from_t_1, _ = inverse_warp(self.imgt_1,self.depth,self.pose[0,:],torch.tensor(self.config.intrinsics).float().cuda())
+		const_from_t_2, _ = inverse_warp(self.imgt_2,self.depth,self.pose[1,:],torch.tensor(self.config.intrinsics).float().cuda())
 		loss = self.mseloss(self.source,const_from_t_1) + self.mseloss(self.source, const_from_t_2)
 
 		self.const_from_t_1 = const_from_t_1
@@ -133,10 +129,10 @@ class ganvo(nn.Module):
 		return loss
 
 	def loss_discriminator(self):
-		pred_real = self.dicriminator(self.source)
+		pred_real = self.discriminator(self.source)
 		loss_real = self.ganloss(pred_real, True)
 
-		pred_fake_2 = self.dicriminator(self.const_from_t_2)
+		pred_fake_2 = self.discriminator(self.const_from_t_2)
 		pred_fake_1 = self.discriminator(self.const_from_t_1)
 
 		loss_fake = self.ganloss(pred_fake_1,False) + self.ganloss(pred_fake_2,False)
