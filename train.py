@@ -5,7 +5,7 @@ from networks import *
 import argparse
 import yaml
 from dataset import dataset
-
+import cv2
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config',help='path to the config file',default='./config.yaml')
@@ -16,12 +16,11 @@ with open(args.config) as fp:
 	config = AttrDict(config)
 
 
-total_data = dataset(config)
-train_sampler, val_sampler = split(total_data, 0.2)
+train_dataset = dataset(config,mode='train')
+val_dataset = dataset(config, mode='val')
 
-
-train_dataset = torch.utils.data.DataLoader(total_data,batch_size = config.batch_size, sampler = train_sampler)
-val_dataset = torch.utils.data.DataLoader(total_data, 1, sampler = val_sampler)
+train_dataset = torch.utils.data.DataLoader(train_dataset,batch_size = config.batch_size)
+val_dataset = torch.utils.data.DataLoader(val_dataset, 1)
 summarywriter = get_summary_writer(rootdir=config.summary_root)
 net = ganvo(config, summarywriter=summarywriter).cuda()
 
@@ -36,6 +35,7 @@ for epc in range(config.epochs):
         net.optimize_paramaters()
         step = epc*len(train_dataset) + i
         net.log_metrics(step)
+
 
     net.save_weights(epc)
     for j, datum in enumerate(val_dataset):
