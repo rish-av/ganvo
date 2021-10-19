@@ -1,9 +1,51 @@
 #huge shout out to https://github.com/ClementPinard/SfmLearner-Pytorch for a lot of this code!!
-
+from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
 import torch
+import datetime
+from os.path import join
+import numpy as np
+from torch.utils.data.sampler import SubsetRandomSampler
 
 pixel_coords = None
+
+
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
+
+def split(joint_dataset,val_percent, sampler=SubsetRandomSampler,random_seed=42):
+
+    '''
+    function useful there is no explicit valitdation scripts available
+    joint_dataset = train + val items
+    returns train and validation samplers based on sampling strategy
+    '''
+    dataset_size = len(joint_dataset)
+    indices = list(range(dataset_size))
+    split = int(np.floor(val_percent * dataset_size))
+    np.random.seed(random_seed)
+    np.random.shuffle(indices)
+    train_indices, val_indices = indices[split:], indices[:split]
+    train_sampler = SubsetRandomSampler(train_indices)
+    valid_sampler = SubsetRandomSampler(val_indices)
+
+    return train_sampler, valid_sampler
+
+
+
+def get_log_dir():
+    '''
+    New log dir at every run according to the time at that point in time.
+    '''
+    now = datetime.datetime.now()
+    return "logs/run-%d-%d-%d-%d-%d-%d"%(now.year,now.month,now.day,now.hour,now.minute,now.second)
+
+
+def get_summary_writer(rootdir):
+
+    return SummaryWriter(join(rootdir,get_log_dir()))
 
 
 def set_id_grid(depth):

@@ -1,10 +1,15 @@
 import torch
+from torch.functional import Tensor
 import torch.nn as nn
 from torch.nn import BatchNorm2d
 from losses import GANLoss
 import itertools
 
 from utils import inverse_warp, pose_vec2mat
+import cv2
+import numpy as np
+import os
+
 
 def conv(in_c,out_c,kernel=3,norm=BatchNorm2d,activation=nn.ELU, stride=1, padding=0):
 	layers = [ nn.Conv2d(in_c,out_c,kernel_size=kernel,stride=stride,bias=False,padding=padding),
@@ -87,20 +92,21 @@ class recurrent_net(nn.Module):
 
 
 class ganvo(nn.Module):
-	def __init__(self,config):
-                super(ganvo,self).__init__()
-                self.config = config
-                self.encoder = encoder(config)
-                self.cnn = encoder(config,cnn=True)
-                self.generator = generator(config)
-                self.rnn = recurrent_net(config)
-                self.discriminator = discriminator(config)
-                self.optimizer = torch.optim.Adam(
-		itertools.chain(self.generator.parameters(),self.encoder.parameters(),self.cnn.parameters(),self.discriminator.parameters()
-		),lr=0.001)
-                self.mseloss = torch.nn.MSELoss()
-                self.ganloss = GANLoss(gan_mode='vanilla')
-                self.device = "cuda:0" if torch.cuda.is_available() else "cpu:0"
+	def __init__(self,config,summarywriter=None):
+			super(ganvo,self).__init__()
+			self.config = config
+			self.encoder = encoder(config)
+			self.cnn = encoder(config,cnn=True)
+			self.generator = generator(config)
+			self.rnn = recurrent_net(config)
+			self.discriminator = discriminator(config)
+			self.optimizer = torch.optim.Adam(
+			itertools.chain(self.generator.parameters(),self.encoder.parameters(),self.cnn.parameters(),self.discriminator.parameters()),lr=0.001)
+			self.mseloss = torch.nn.MSELoss()
+			self.ganloss = GANLoss(gan_mode='vanilla')
+			self.device = "cuda:0" if torch.cuda.is_available() else "cpu:0"
+			self.summarywriter = summarywriter
+			self.model_names = ["generator","cnn","rnn","discriminator","encoder"]
 
 	def set_input(self, datum):
                 device = self.device
@@ -153,4 +159,54 @@ class ganvo(nn.Module):
 		self.optimizer.zero_grad()
 		self.loss_net.backward()
 		self.optimizer.step()
+
+
+	def tensor2im(self, img):
+		img = img.permute(1,2,0).detach().cpu().numpy()*0.5 + 0.5
+		img = img*255
+
+		return img
+
+	def get_depth_image(self, depth):
+		depth = depth[0].detach().cpu().numpy()*255
+		depth = depth.astype(np.uint8)
+
+		image = np.stack([depth,depth,depth],axis=2)
+		image = cv2.applyColorMap(image, cv2.COLORMAP_JET)
+
+		return image
+
+	def log_metrics(self, step, process = 'train'):
+		if self.summarywriter!= None:
+			self.summarywriter.add_scalar(process + '/loss',self.loss_net,step)
+
+	def load_ckpts(self,epoch):
+		if self.config.pretrained_epoch:
+
+			for name in self.model_names:
+				path  = os.path.join(self.config.weights_dir,"%s_net_%s.pth"%(str(epoch),name))
+				params = torch.load(path)
+				net = getattr(self, name)
+				net.load_state_dict(params)
+	
+	def save_weights(self, epoch):
+		for name in self.model_names:
+			if isinstance(name, str):
+				save_filename = '%s_net_%s.pth' % (epoch, name)
+				save_path = os.path.join(self.config.weights_dir, save_filename)
+				net = getattr(self, name)
+				torch.save(net.state_dict(), save_path)
+
+
+	def get_visuals(self):
+		depth = self.get_depth_image(self.depth[0])
+		img_t1 = self.tensor2im(self.imgt_1[0])
+		img_t2 = self.tensor2im(self.imgt_2[0])
+		source = self.tensor2im(self.source[0])
+
+		return depth, img_t1, img_t2, source
+
+
+
+
 

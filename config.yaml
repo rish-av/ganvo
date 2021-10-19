@@ -8,7 +8,10 @@ in_c: 3
 h: 128
 w: 416
 lstm_hidden_size: 10
-basepath: /mnt/serv-2101/kitti_odometry/
+basepath: ./data
 batch_size: 1
 epochs: 2
+summary_root: './'
+pretrained_epoch: False
+weights_dir: './weights'
 
