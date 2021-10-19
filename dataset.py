@@ -10,7 +10,7 @@ class dataset(torch.utils.data.Dataset):
             self.config = config
             self.basepath = config.basepath
 
-            sequences = glob(self.basepath + "/*")
+            sequences = glob(self.basepath + "/raw/sequences/*")
 
             images = []
 
