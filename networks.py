@@ -21,12 +21,12 @@ def conv(in_c,out_c,kernel=3,norm=BatchNorm2d,activation=nn.ELU, stride=1, paddi
 			   ]
 	return nn.Sequential(*layers)
 
-def upconv(in_c,out_c,kernel_size=3,norm=BatchNorm2d):
+def upconv(in_c,out_c,kernel_size=3,norm=BatchNorm2d,activation=nn.ReLU):
 
 	layers = [nn.Upsample(scale_factor=2, mode = 'bilinear'),
                    nn.Conv2d(in_c,out_c,kernel_size=kernel_size,bias=False,padding=1),
 	           norm(out_c),
-		   nn.ELU()]
+		   activation()]
 	return nn.Sequential(*layers)
 
 class generator(nn.Module):
@@ -74,6 +74,7 @@ class recurrent_net(nn.Module):
 		lstm_in_size = self.get_in_size(config)
 		self.recur = nn.LSTM(input_size=lstm_in_size,hidden_size=config.lstm_hidden_size,
 			num_layers=config.num_layers_lstm,proj_size=6)
+		self.device = "cuda:0" if torch.cuda.is_available() else "cpu:0"
 
 	def get_in_size(self,config):
 		with torch.no_grad():
@@ -84,10 +85,10 @@ class recurrent_net(nn.Module):
 			return out[2]*out[3]
 
 	def forward(self,x):
-		h0 = torch.randn(self.config.num_layers_lstm,x.shape[0],6)
-		c0 = torch.randn(self.config.num_layers_lstm,x.shape[0],self.config.lstm_hidden_size)
+		h0 = torch.randn(self.config.num_layers_lstm,x.shape[0],6).to(self.device)
+		c0 = torch.randn(self.config.num_layers_lstm,x.shape[0],self.config.lstm_hidden_size).to(self.device)
 		x_in = x.reshape(x.shape[1],x.shape[0],-1)
-		out, (hn,cn) = self.recur(x_in)
+		out, (hn,cn) = self.recur(x_in, (h0, c0))
 		return hn
 
 
@@ -100,50 +101,52 @@ class ganvo(nn.Module):
 			self.generator = generator(config)
 			self.rnn = recurrent_net(config)
 			self.discriminator = discriminator(config)
-			self.optimizer = torch.optim.Adam(
-			itertools.chain(self.generator.parameters(),self.encoder.parameters(),self.cnn.parameters(),self.discriminator.parameters()),lr=0.001)
-			self.mseloss = torch.nn.MSELoss()
+			self.optimizer = torch.optim.Adam(itertools.chain(self.generator.parameters(),
+			self.encoder.parameters(),self.cnn.parameters(),self.discriminator.parameters(), self.rnn.parameters()),lr=0.001)
+			self.mseloss = torch.nn.L1Loss()
 			self.ganloss = GANLoss(gan_mode='vanilla')
 			self.device = "cuda:0" if torch.cuda.is_available() else "cpu:0"
 			self.summarywriter = summarywriter
 			self.model_names = ["generator","cnn","rnn","discriminator","encoder"]
 
 	def set_input(self, datum):
-                device = self.device
-                self.source = datum["t1"].to(device)
-                self.imgt_1 = datum["t0"].to(device)
-                self.imgt_2 = datum["t2"].to(device)
+			device = self.device
+			self.source = datum["t1"].to(device)
+			self.imgt_1 = datum["t0"].to(device)
+			self.imgt_2 = datum["t2"].to(device)
+			self.intrisics = torch.tensor(datum["intrinsics"]).to(device)
 
 	def forward(self):
-                out_gan = self.encoder(self.source)
-                depth = self.generator(out_gan)
-                pose = self.cnn(torch.cat([self.imgt_1,self.source,self.imgt_2],dim=1))
-                pose = self.rnn(pose)
-                self.depth = depth
-                self.pose = pose
-                
-                return depth, pose
+		out_gan = self.encoder(self.source)
+		depth = self.generator(out_gan)
+		pose = self.cnn(torch.cat([self.imgt_1,self.source,self.imgt_2],dim=1))
+		pose = self.rnn(pose)
+		self.depth = depth
+		self.pose = pose
+
+		print(depth, torch.max(depth), torch.min(depth), pose.shape)
+
+		return depth, pose
 
 	def loss_generator(self):
-		const_from_t_1, _ = inverse_warp(self.imgt_1,self.depth,self.pose[0,:],torch.tensor(self.config.intrinsics).float().cuda())
-		const_from_t_2, _ = inverse_warp(self.imgt_2,self.depth,self.pose[1,:],torch.tensor(self.config.intrinsics).float().cuda())
-		loss = self.mseloss(self.source,const_from_t_1) + self.mseloss(self.source, const_from_t_2)
+		const_from_t_1, valid_p_1 = inverse_warp(self.imgt_1,self.depth,self.pose[0,:],self.intrisics)
+		const_from_t_2, valid_p_2 = inverse_warp(self.imgt_2,self.depth,self.pose[1,:],self.intrisics)
+		loss = self.mseloss(self.source*(valid_p_1.float().unsqueeze(1)),const_from_t_1*(valid_p_1.float().unsqueeze(1))) + \
+			self.mseloss(self.source*(valid_p_2.float().unsqueeze(1)), const_from_t_2*(valid_p_2.float().unsqueeze(1)))
 
 		self.const_from_t_1 = const_from_t_1
 		self.const_from_t_2 = const_from_t_2
+		print(torch.mean(valid_p_2.float())*100)
 		
 		return loss
 
 	def loss_discriminator(self):
 		pred_real = self.discriminator(self.source)
 		loss_real = self.ganloss(pred_real, True)
+		pred_fake = self.discriminator(self.const_from_t_2.detach())
+		loss_fake = self.ganloss(pred_fake,False)
 
-		pred_fake_2 = self.discriminator(self.const_from_t_2)
-		pred_fake_1 = self.discriminator(self.const_from_t_1)
-
-		loss_fake = self.ganloss(pred_fake_1,False) + self.ganloss(pred_fake_2,False)
-
-		loss_D = 0.5*(loss_real + loss_fake)
+		loss_D = loss_real + loss_fake
 
 		return loss_D
 
@@ -153,7 +156,8 @@ class ganvo(nn.Module):
 		loss_G = self.loss_generator()
 		loss_D = self.loss_discriminator()
 
-		beta = (loss_G/loss_D).mean()
+		beta = (loss_G/loss_D).detach()
+
 		self.loss_net = loss_G + beta*loss_D
 
 		self.optimizer.zero_grad()
@@ -168,13 +172,17 @@ class ganvo(nn.Module):
 		return img
 
 	def get_depth_image(self, depth):
-		depth = depth[0].detach().cpu().numpy()*255
-		depth = depth.astype(np.uint8)
+		depth = depth[0].detach().cpu().numpy()
+		depth_mpl = depth
+		maxd = np.max(depth)
+		depth = depth/maxd
+		depth*=255
 
+		depth = depth.astype(np.uint8)
 		image = np.stack([depth,depth,depth],axis=2)
 		image = cv2.applyColorMap(image, cv2.COLORMAP_JET)
 
-		return image
+		return image, depth_mpl
 
 	def log_metrics(self, step, process = 'train'):
 		if self.summarywriter!= None:
@@ -199,12 +207,14 @@ class ganvo(nn.Module):
 
 
 	def get_visuals(self):
-		depth = self.get_depth_image(self.depth[0])
+		depth, depth_mpl = self.get_depth_image(self.depth[0])
 		img_t1 = self.tensor2im(self.imgt_1[0])
 		img_t2 = self.tensor2im(self.imgt_2[0])
 		source = self.tensor2im(self.source[0])
 
-		return depth, img_t1, img_t2, source
+		const_1 = self.tensor2im(self.const_from_t_1[0])
+
+		return depth, img_t1, img_t2, source, const_1, depth_mpl
 
 
 

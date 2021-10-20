@@ -6,6 +6,7 @@ import argparse
 import yaml
 from dataset import dataset
 import cv2
+import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--config',help='path to the config file',default='./config.yaml')
