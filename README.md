@@ -13,10 +13,10 @@ I am currently training the network -- The weights alongside other quantitative 
 - For pretrained weights visit this [link](#)
 
 ## Testing
-- Testing Pose -- run `python eval_pose.py --config ./test_pose.py` for quantitative pose evaluation.
+- Testing Pose -- run `python eval_pose.py --config ./eval_pose.py` for quantitative pose evaluation.
 
 ## Inference
-- For depth inference on a single image, run `python inference.py --img_path ./test_image.png --generator_weights ./weights/generator.pth`
+- For depth inference on a single image, run `python inference.py --img_path ./test_image.png --generator_weights ./weights/generator.pth --h 128 --w 416`
 ## Qualitative Results
 **Dec 24**
 ## Quantitative Results
