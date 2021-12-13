@@ -18,6 +18,6 @@ I am currently training the network -- The weights alongside other quantitative 
 ## Inference
 - For depth inference on a single image, run `python inference.py --img_path ./test_image.png --generator_weights ./weights/generator.pth --h 128 --w 416`
 ## Qualitative Results
-**Dec 24**
+**Dec Last Week**
 ## Quantitative Results
-**Dec 24**
+**Dec Last Week**
