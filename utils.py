@@ -1,4 +1,3 @@
-#huge shout out to https://github.com/ClementPinard/SfmLearner-Pytorch for a lot of this code!!
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
 import torch
@@ -47,6 +46,24 @@ def get_summary_writer(rootdir):
 
     return SummaryWriter(join(rootdir,get_log_dir()))
 
+
+def grad(im):
+    gradx = F.pad((im[:, :, :, 2:] - im[:, :, :, :-2]) / 2.0, (1, 1, 0, 0))
+    grady = F.pad((im[:, :, 2:, :] - im[:, :, :-2, :]) / 2.0, (0, 0, 1, 1))
+    return gradx, grady 
+
+def sobel(im):
+    c = im.size()[1]
+    fx = torch.Tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]])
+    fx = fx.view(1, 1, 3, 3).expand(1, c, 3, 3)
+    fy = torch.Tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]])
+    fy = fy.view(1, 1, 3, 3).expand(1, c, 3, 3)
+    if im.is_cuda:
+        fx = fx.cuda()
+        fy = fy.cuda()
+    gradx = F.pad(F.conv2d(im, fx), (1, 1, 1, 1))
+    grady = F.pad(F.conv2d(im, fy), (1, 1, 1, 1))
+    return gradx, grady
 
 def set_id_grid(depth):
     global pixel_coords

@@ -1,7 +1,7 @@
 import torch
 from losses import *
 from utils import *
-from networks import *
+from network import *
 import argparse
 import yaml
 from dataset import dataset
@@ -9,12 +9,12 @@ import cv2
 import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config',help='path to the config file',default='./config.yaml')
+parser.add_argument('--config',help='path to the config file',default='./config2.yaml')
 
 args = parser.parse_args()
 with open(args.config) as fp:
-	config = yaml.load(fp)
-	config = AttrDict(config)
+    config = yaml.load(fp)
+    config = AttrDict(config)
 
 
 train_dataset = dataset(config,mode='train')
@@ -36,6 +36,9 @@ for epc in range(config.epochs):
         net.optimize_paramaters()
         step = epc*len(train_dataset) + i
         net.log_metrics(step)
+        
+        if i > 0. and i % config.save_freq == 0:
+            net.save_weights('latest')
 
 
     net.save_weights(epc)

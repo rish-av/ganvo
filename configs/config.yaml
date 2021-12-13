@@ -12,8 +12,9 @@ basepath: ./data
 batch_size: 1
 epochs: 2
 summary_root: './'
+save_freq: 1000
 pretrained_epoch: False
 weights_dir: './weights'
-test_seqs: ['19','20','21']
-train_seqs: ['00','01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18']
+test_seqs: ['09','10']
+train_seqs: ['00','01','02','03','04','05','10','12','13','14','15','16']
 

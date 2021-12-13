@@ -1,0 +1,10 @@
+pretrained_posenet: './net_rnn.pth'
+img_height: 128
+img_width: 416
+no-resize: True
+min_depth: 1e-3
+max_depth: 80
+dataset_dir: './data/raw/'
+sequences: ['09','10']
+output_dir: './output'
+rotation_mode: 'euler'

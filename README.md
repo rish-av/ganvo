@@ -4,18 +4,20 @@ Generative Adversarial Network for Visual Odometry
 
 The work uses GANs for unsupervised visual odometry which is later used for depth estimation.
 
-I am currently training the network -- The weights alongside other quantitative and qualitative stuff will be made available by Dec 24 2021. (I am poor--can only use collab :-P and also have a full-time job), feel free to use this code though!
+I am currently training the network -- The weights alongside other quantitative and qualitative stuff will be made available by Dec 24 2021. (I am poor--can only use collab :-P), feel free to use this code though!
 
-# Training
+## Training
 - Prepare the config file -- this specifies the various hyperparameters, weights directory, summary, the root directory of the dataset, etc.
 - Install all the dependencies with `pip install -r requirements.txt`
 - Run `python train.py --config ./config.yaml`
 - For pretrained weights visit this [link](#)
 
-# Testing
-- To generate visuals from the validation set, setup a test config file (eg. test_config.yaml)
-- Run `python test.py --config ./test_config.yaml`
+## Testing
+- Testing Pose -- run `python eval_pose.py --config ./test_pose.py` for quantitative pose evaluation.
 
+## Inference
+- For depth inference on a single image, run `python inference.py --img_path ./test_image.png --generator_weights ./weights/generator.pth`
 ## Qualitative Results
-
+**Dec 24**
 ## Quantitative Results
+**Dec 24**
