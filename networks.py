@@ -9,7 +9,37 @@ from utils import inverse_warp, pose_vec2mat
 import cv2
 import numpy as np
 import os
+import random
 
+class ImagePool():
+
+    def __init__(self, pool_size):
+        self.pool_size = pool_size
+        if self.pool_size > 0:  # create an empty pool
+            self.num_imgs = 0
+            self.images = []
+
+    def query(self, images):
+        if self.pool_size == 0: 
+            return images
+        return_images = []
+        for image in images:
+            image = torch.unsqueeze(image.data, 0)
+            if self.num_imgs < self.pool_size:   
+                self.num_imgs = self.num_imgs + 1
+                self.images.append(image)
+                return_images.append(image)
+            else:
+                p = random.uniform(0, 1)
+                if p > 0.5:  
+                    random_id = random.randint(0, self.pool_size - 1)  
+                    tmp = self.images[random_id].clone()
+                    self.images[random_id] = image
+                    return_images.append(tmp)
+                else:      
+                    return_images.append(image)
+        return_images = torch.cat(return_images, 0)   
+        return return_images
 
 def conv(in_c,out_c,kernel=3,norm=BatchNorm2d,activation=nn.ELU, stride=1, padding=0):
 	layers = [ nn.Conv2d(in_c,out_c,kernel_size=kernel,stride=stride,bias=False,padding=padding),
@@ -94,29 +124,30 @@ class recurrent_net(nn.Module):
 
 class ganvo(nn.Module):
 	def __init__(self,config,summarywriter=None):
-			super(ganvo,self).__init__()
-			self.config = config
-			self.encoder = encoder(config)
-			self.cnn = encoder(config,cnn=True)
-			self.generator = generator(config)
-			self.rnn = recurrent_net(config)
-			self.discriminator = discriminator(config)
-			self.optimizer_G = torch.optim.Adam(itertools.chain(self.generator.parameters(),
-			self.encoder.parameters(),self.cnn.parameters(), self.rnn.parameters()),lr=0.0002)
-			self.optimizer_D =  torch.optim.Adam(self.discriminator.parameters(),lr=0.0002)
+		super(ganvo,self).__init__()
+		self.fake_pool = ImagePool(50)
+		self.config = config
+		self.encoder = encoder(config)
+		self.cnn = encoder(config,cnn=True)
+		self.generator = generator(config)
+		self.rnn = recurrent_net(config)
+		self.discriminator = discriminator(config)
+		self.optimizer_G = torch.optim.Adam(itertools.chain(self.generator.parameters(),
+		self.encoder.parameters(),self.cnn.parameters(), self.rnn.parameters()),lr=0.0002)
+		self.optimizer_D =  torch.optim.Adam(self.discriminator.parameters(),lr=0.0002)
 
-			self.mseloss = torch.nn.L1Loss()
-			self.ganloss = GANLoss(gan_mode='vanilla')
-			self.device = "cuda:0" if torch.cuda.is_available() else "cpu:0"
-			self.summarywriter = summarywriter
-			self.model_names = ["generator","cnn","rnn","discriminator","encoder"]
+		self.mseloss = torch.nn.L1Loss()
+		self.ganloss = GANLoss(gan_mode='vanilla')
+		self.device = "cuda:0" if torch.cuda.is_available() else "cpu:0"
+		self.summarywriter = summarywriter
+		self.model_names = ["generator","cnn","rnn","discriminator","encoder"]
 
 	def set_input(self, datum):
-			device = self.device
-			self.source = datum["t1"].to(device)
-			self.imgt_1 = datum["t0"].to(device)
-			self.imgt_2 = datum["t2"].to(device)
-			self.intrisics = torch.tensor(datum["intrinsics"]).to(device)
+		device = self.device
+		self.source = datum["t1"].to(device)
+		self.imgt_1 = datum["t0"].to(device)
+		self.imgt_2 = datum["t2"].to(device)
+		self.intrisics = torch.tensor(datum["intrinsics"]).to(device)
 
 
 	def set_requires_grad(self, net,requires_grad):
@@ -130,6 +161,7 @@ class ganvo(nn.Module):
 		pose = self.rnn(pose)
 		self.depth = depth
 		self.pose = pose
+
 		return depth, pose
 
 	def optimize_G(self):
@@ -143,7 +175,7 @@ class ganvo(nn.Module):
 		
 
 		#let's see how well can the discriminator fool
-		loss_adv_g = self.ganloss(self.discriminator(const_from_t_1),True) + self.ganloss(self.discriminator(const_from_t_2),True)
+		loss_adv_g = self.ganloss(self.discriminator(const_from_t_2),True)
 		loss_net = loss_adv_g + loss_recons
 
 		self.optimizer_G.zero_grad()
@@ -152,8 +184,9 @@ class ganvo(nn.Module):
 		return loss_net
 
 	def optimize_D(self):
-		loss_real = self.ganloss(self.discriminator(self.source), True) 
-		loss_fake = (self.ganloss(self.discriminator(self.const_from_t_2.detach()),False) + self.ganloss(self.discriminator(self.const_from_t_1.detach()),False))/2
+		loss_real = self.ganloss(self.discriminator(self.source), True)
+		fake_image = self.fake_pool.query(self.const_from_t_1)
+		loss_fake = self.ganloss(self.discriminator(fake_image.detach()),False)
 		loss_D = (loss_real + loss_fake)/2
 
 		self.optimizer_D.zero_grad()
